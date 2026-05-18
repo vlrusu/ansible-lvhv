@@ -1,0 +1,23 @@
+---
+- name: Program tracker DTC FPGA image
+  hosts: "{{ target_hosts | default('mu2e_trk_boxes') }}"
+  gather_facts: false
+
+  vars:
+    program_script: /home/mu2ehwdev/program_all_FPGA_AL9.sh
+    bitfile_path: /home/mu2ehwdev/DTC_Firmware/DTC2026May11_19_22.1_6ROC/DTC.bit
+    enter_presses: 200
+
+  tasks:
+    - name: Program FPGA bitfile
+      ansible.builtin.shell: |
+        set -o pipefail
+        perl -e 'print "\n" x $ARGV[0]' "{{ enter_presses }}" | "{{ program_script }}" "{{ bitfile_path }}"
+      args:
+        executable: /bin/bash
+      register: program_fpga_result
+      changed_when: true
+
+    - name: Show programming output
+      ansible.builtin.debug:
+        var: program_fpga_result.stdout_lines

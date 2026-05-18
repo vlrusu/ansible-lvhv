@@ -1,0 +1,71 @@
+---
+- name: Update LVHVBox and deploy Graphite pusher service
+  hosts: "{{ target_hosts | default('psu_boxes') }}"
+  gather_facts: false
+
+  vars:
+    lvhvbox_path: /home/mu2e/LVHVBox
+    lvhvbox_repo_url: https://github.com/vlrusu/LVHVBox.git
+    lvhvbox_branch: main
+    pusher_script_src: "{{ lvhvbox_path }}/Client/graphite_pusher.py"
+    pusher_script_dest: /usr/local/bin/graphite-pusher
+    pusher_service_src: "{{ lvhvbox_path }}/systemd/graphite-pusher.service"
+    pusher_service_dest: /etc/systemd/system/graphite-pusher.service
+
+  tasks:
+    - name: Check whether LVHVBox directory exists
+      ansible.builtin.stat:
+        path: "{{ lvhvbox_path }}"
+      register: lvhvbox_dir
+      become: false
+
+    - name: Create LVHVBox directory if missing
+      ansible.builtin.file:
+        path: "{{ lvhvbox_path }}"
+        state: directory
+        owner: mu2e
+        group: mu2e
+        mode: "0755"
+      when: not lvhvbox_dir.stat.exists
+      become: true
+
+    - name: Pull LVHVBox repository
+      ansible.builtin.git:
+        repo: "{{ lvhvbox_repo_url }}"
+        dest: "{{ lvhvbox_path }}"
+        version: "{{ lvhvbox_branch }}"
+        update: true
+        force: false
+      become: false
+
+    - name: Install Graphite pusher script
+      ansible.builtin.copy:
+        src: "{{ pusher_script_src }}"
+        dest: "{{ pusher_script_dest }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0755"
+      become: true
+
+    - name: Install Graphite pusher systemd unit
+      ansible.builtin.copy:
+        src: "{{ pusher_service_src }}"
+        dest: "{{ pusher_service_dest }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0644"
+      become: true
+
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+      become: true
+
+    - name: Enable and start Graphite pusher service
+      ansible.builtin.systemd:
+        name: graphite-pusher.service
+        enabled: true
+        state: started
+      become: true

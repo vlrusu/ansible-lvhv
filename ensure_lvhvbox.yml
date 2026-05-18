@@ -1,0 +1,30 @@
+---
+- name: Ensure LVHVBox exists and is up to date
+  hosts: "{{ target_hosts | default('psu_boxes') }}"
+  gather_facts: false
+
+  vars:
+    lvhvbox_path: /home/mu2e/LVHVBox
+    lvhvbox_repo_url: https://github.com/vlrusu/LVHVBox.git
+    lvhvbox_branch: main
+
+  tasks:
+    - name: Check whether LVHVBox directory exists
+      ansible.builtin.stat:
+        path: "{{ lvhvbox_path }}"
+      register: lvhvbox_dir
+
+    - name: Create LVHVBox directory if missing
+      ansible.builtin.file:
+        path: "{{ lvhvbox_path }}"
+        state: directory
+        mode: "0755"
+      when: not lvhvbox_dir.stat.exists
+
+    - name: Pull LVHVBox repository
+      ansible.builtin.git:
+        repo: "{{ lvhvbox_repo_url }}"
+        dest: "{{ lvhvbox_path }}"
+        version: "{{ lvhvbox_branch }}"
+        update: true
+        force: false

@@ -1,0 +1,32 @@
+---
+- name: Check tracker PCIe firmware versions
+  hosts: "{{ target_hosts | default('mu2e_trk_boxes') }}"
+  gather_facts: false
+
+  vars:
+    reset_script: /home/mu2ehwdev/reset_PCIe_AL9.sh
+    reset_arg: NOKILL
+
+  tasks:
+    - name: Run PCIe reset script and read firmware versions
+      ansible.builtin.command:
+        argv:
+          - sudo
+          - "{{ reset_script }}"
+          - "{{ reset_arg }}"
+      register: firmware_check_result
+      changed_when: false
+
+    - name: Extract firmware versions from script output
+      ansible.builtin.set_fact:
+        firmware_versions: >-
+          {{
+            firmware_check_result.stdout
+            | regex_findall('0x[0-9a-fA-F]+')
+          }}
+
+    - name: Print firmware versions for both PCIe devices
+      ansible.builtin.debug:
+        msg:
+          - "PCIe Device 0 firmware: {{ firmware_versions[0] | default('NOT FOUND') }}"
+          - "PCIe Device 1 firmware: {{ firmware_versions[1] | default('NOT FOUND') }}"
