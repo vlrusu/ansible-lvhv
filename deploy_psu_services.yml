@@ -1,0 +1,123 @@
+---
+- name: Update LVHVBox and deploy PSU sensor services
+  hosts: "{{ target_hosts | default('psu_boxes') }}"
+  gather_facts: false
+
+  vars:
+    lvhvbox_path: /home/mu2e/LVHVBox
+    lvhvbox_repo_url: https://github.com/vlrusu/LVHVBox.git
+    lvhvbox_branch: main
+    systemd_unit_dir: /etc/systemd/system
+    psu_services:
+      - name: i2c-sensor-server
+        script_src: i2c-sensor-server/i2c-sensor-server.py
+        script_dest: /usr/bin/i2c-sensor-server
+        env_src: i2c-sensor-server/i2c-sensor.env
+        env_dest: /etc/mu2e-tracker-i2c-sensor-tools/i2c-sensor.env
+        log_dir: /var/log/mu2e-tracker-i2c-sensor-tools
+        dry_run: false
+      - name: i2c-sensor-alerts
+        script_src: i2c-sensor-alerts/i2c-sensor-alerts.py
+        script_dest: /usr/bin/i2c-sensor-alerts
+        env_src: i2c-sensor-alerts/i2c-sensor-alerts.env
+        env_dest: /etc/mu2e-tracker-i2c-sensor-alerts/i2c-sensor-alerts.env
+        log_dir: /var/log/mu2e-tracker-i2c-sensor-tools
+        dry_run: true
+      - name: network-watch
+        script_src: network-watch/network-watch.py
+        script_dest: /usr/bin/network-watch
+        env_src: network-watch/network-watch.env
+        env_dest: /etc/mu2e-tracker-network-watch/network-watch.env
+        log_dir: /var/log/mu2e-tracker-network-watch
+        dry_run: true
+    psu_service_names: "{{ selected_psu_services | default(psu_services | map(attribute='name') | list) }}"
+    psu_services_to_deploy: "{{ psu_services | selectattr('name', 'in', psu_service_names) | list }}"
+
+  tasks:
+    - name: Check whether LVHVBox directory exists
+      ansible.builtin.stat:
+        path: "{{ lvhvbox_path }}"
+      register: lvhvbox_dir
+      become: false
+
+    - name: Create LVHVBox directory if missing
+      ansible.builtin.file:
+        path: "{{ lvhvbox_path }}"
+        state: directory
+        mode: "0755"
+      when: not lvhvbox_dir.stat.exists
+      become: false
+
+    - name: Pull LVHVBox repository
+      ansible.builtin.git:
+        repo: "{{ lvhvbox_repo_url }}"
+        dest: "{{ lvhvbox_path }}"
+        version: "{{ lvhvbox_branch }}"
+        update: true
+        force: false
+      become: false
+
+    - name: Create PSU service config and log directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop: "{{ (psu_services_to_deploy | map(attribute='env_dest') | map('dirname') | list + psu_services_to_deploy | map(attribute='log_dir') | list) | unique }}"
+      become: true
+
+    - name: Install PSU service scripts
+      ansible.builtin.copy:
+        src: "{{ lvhvbox_path }}/{{ item.script_src }}"
+        dest: "{{ item.script_dest }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0755"
+      loop: "{{ psu_services_to_deploy }}"
+      become: true
+
+    - name: Install PSU service environment files
+      ansible.builtin.copy:
+        src: "{{ lvhvbox_path }}/{{ item.env_src }}"
+        dest: "{{ item.env_dest }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0644"
+        force: "{{ overwrite_psu_env | default(false) }}"
+      loop: "{{ psu_services_to_deploy }}"
+      become: true
+
+    - name: Install PSU service units
+      ansible.builtin.copy:
+        src: "{{ lvhvbox_path }}/systemd/{{ item.name }}.service"
+        dest: "{{ systemd_unit_dir }}/{{ item.name }}.service"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0644"
+      loop: "{{ psu_services_to_deploy }}"
+      become: true
+
+    - name: Force dry-run mode for selected PSU services
+      ansible.builtin.replace:
+        path: "{{ systemd_unit_dir }}/{{ item.name }}.service"
+        regexp: '^(ExecStart=.*?)(\s+--dry-run)?$'
+        replace: '\1 --dry-run'
+      loop: "{{ psu_services_to_deploy | selectattr('dry_run') }}"
+      become: true
+
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+      become: true
+
+    - name: Enable and restart PSU services
+      ansible.builtin.systemd:
+        name: "{{ item.name }}.service"
+        enabled: true
+        state: restarted
+      loop: "{{ psu_services_to_deploy }}"
+      become: true
