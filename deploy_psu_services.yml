@@ -8,6 +8,7 @@
     lvhvbox_repo_url: https://github.com/vlrusu/LVHVBox.git
     lvhvbox_branch: main
     systemd_unit_dir: /etc/systemd/system
+    i2c_sensor_alerts_dry_run: true
     network_watch_dry_run: true
     psu_services:
       - name: i2c-sensor-server
@@ -23,7 +24,7 @@
         env_src: i2c-sensor-alerts/i2c-sensor-alerts.env
         env_dest: /etc/mu2e-tracker-i2c-sensor-alerts/i2c-sensor-alerts.env
         log_dir: /var/log/mu2e-tracker-i2c-sensor-tools
-        dry_run: true
+        dry_run: "{{ i2c_sensor_alerts_dry_run | bool }}"
       - name: network-watch
         script_src: network-watch/network-watch.py
         script_dest: /usr/bin/network-watch
